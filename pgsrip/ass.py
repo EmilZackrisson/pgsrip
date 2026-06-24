@@ -1,3 +1,12 @@
+class ASSItem:
+    def __init__(self, text, start_time, end_time, pos_x=None, pos_y=None) -> None:
+        self.text = text
+        self.start_time = start_time
+        self.end_time = end_time
+        self.pos_x = pos_x
+        self.pos_y = pos_y
+
+
 class ASSCreator:
     def __init__(self, title="Generated Subtitles", resolution_x=1920, resolution_y=1080):
         """
@@ -94,12 +103,3 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print(f"Successfully saved subtitles to {filepath}")
         except IOError as e:
             print(f"Error saving file: {e}")
-
-
-class ASSItem:
-    def __init__(self, text, start_time, end_time, pos_x=None, pos_y=None) -> None:
-        self.text = text
-        self.start_time = start_time
-        self.end_time = end_time
-        self.pos_x = pos_x
-        self.pos_y = pos_y
