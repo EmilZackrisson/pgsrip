@@ -13,7 +13,7 @@ import pytesseract as tess
 
 from pgsrip import Pgs, __version__, api
 from pgsrip.media import Media
-from pgsrip.options import Options
+from pgsrip.options import Options, SubtitleOutputFormat
 
 logger = logging.getLogger('pgsrip')
 
@@ -79,6 +79,7 @@ AGE = AgeParamType()
 
 @click.command()
 @click.option('-c', '--config', type=click.Path(), help='cleanit configuration path to be used')
+@click.option('-o', '--output-format', type=click.Choice(SubtitleOutputFormat, case_sensitive=False), default=SubtitleOutputFormat.SRT, help='Subtitle format to output. Can be srt or ass.')
 @click.option('-l', '--language', type=LANGUAGE, multiple=True, help='Language as IETF code, '
               'e.g. en, pt-BR (can be used multiple times).')
 @click.option('-t', '--tag', required=False, multiple=True, help='Rule tags to be used, '
@@ -99,6 +100,7 @@ AGE = AgeParamType()
 @click.argument('path', type=click.Path(), required=True, nargs=-1)
 @click.version_option(__version__)
 def pgsrip(config: typing.Optional[str],
+           output_format: typing.Optional[SubtitleOutputFormat],
            language: typing.Optional[typing.Tuple[Language]],
            tag: typing.Optional[typing.Tuple[str]],
            encoding: typing.Optional[str],
@@ -118,12 +120,14 @@ def pgsrip(config: typing.Optional[str],
         logger.setLevel(logging.DEBUG)
         logger.info(f'Tesseract version: {tess.get_tesseract_version()}')
         logger.info(f'Tesseract data: {os.getenv("TESSDATA_PREFIX")}')
+        logger.info(f"Output format: {output_format}")
 
     if config and (not os.path.isfile(config) or os.path.isdir(config)):
         click.echo(f"Invalid configuration is defined: {click.style(config, bold=True)}")
         return
 
     options = Options(config_path=config,
+                      output_format=output_format,
                       languages=set(language or []),
                       tags=set(tag or []),
                       encoding=encoding,
@@ -132,7 +136,7 @@ def pgsrip(config: typing.Optional[str],
                       keep_temp_files=keep_temp_files,
                       max_workers=max_workers,
                       age=age,
-                      srt_age=srt_age)
+                      srt_age=srt_age,)
 
     rules = options.config.select_rules(tags=options.tags, languages=options.languages)
     if not rules:

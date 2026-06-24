@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 import shutil
 import typing
 from abc import ABC, abstractmethod
 from datetime import timedelta
 from types import TracebackType
 
+import cv2
 from babelfish import Language
 
 from pgsrip.media_path import MediaPath
@@ -162,14 +164,19 @@ class Pgs:
         return self._items
 
     def matches(self, options: Options):
-        if not self.srt_path.exists():
+
+        output_format = options.output_format.name.lower()
+
+        subtitle_path = Path(str(self.srt_path).rstrip("srt") + output_format)
+
+        if not subtitle_path.exists():
             return True
 
         if not options.overwrite:
-            logger.debug('Skipping %s since %s already exists', self, self.srt_path)
+            logger.debug('Skipping %s since %s already exists', self, subtitle_path)
             return False
         if options.srt_age and self.srt_path.m_age < options.srt_age:
-            logger.debug('Skipping since %s is too new', self.srt_path)
+            logger.debug('Skipping since %s is too new', subtitle_path)
             return False
 
         return True
@@ -190,6 +197,15 @@ class Pgs:
         with open(os.path.join(self.temp_folder, 'display-sets.json'), mode='w', encoding='utf8') as f:
             json.dump([ds.to_json() for ds in display_sets], f,
                       indent=2, ensure_ascii=False, default=lambda x: str(x))
+
+    def get_video_resulution(self) -> typing.Tuple[int, int]:
+        """Returns the video resulution of media. Return type is a tuple of type (width, height)."""
+        video_path = f"{self.media_path.base_path}.{self.media_path.extension}"
+        vid = cv2.VideoCapture(video_path)
+        height = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        width = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
+
+        return (width, height)
 
     def __repr__(self):
         return f'<{self.__class__.__name__} [{self}]>'

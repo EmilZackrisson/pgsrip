@@ -33,6 +33,12 @@ class TesseractPageSegmentationMode(enum.Enum):
     RAW_LINE = 13
 
 
+@enum.unique
+class SubtitleOutputFormat(enum.Enum):
+    SRT = 0
+    ASS = 1
+
+
 class Options:
 
     def __init__(self,
@@ -49,7 +55,8 @@ class Options:
                  tesseract_oem: typing.Optional[TesseractEngineMode] = None,
                  tesseract_psm: typing.Optional[TesseractPageSegmentationMode] = None,
                  age: typing.Optional[timedelta] = None,
-                 srt_age: typing.Optional[timedelta] = None):
+                 srt_age: typing.Optional[timedelta] = None,
+                 output_format: SubtitleOutputFormat = SubtitleOutputFormat.SRT):
         self.config = Config.from_path(config_path) if config_path else Config()
         self.languages = languages or set()
         self.tags = tags or {'default'}
@@ -64,6 +71,7 @@ class Options:
         self.tesseract_psm = tesseract_psm
         self.age = age
         self.srt_age = srt_age
+        self.output_format = output_format
 
     def __repr__(self):
         return f'<{self.__class__.__name__} [{self}]>'

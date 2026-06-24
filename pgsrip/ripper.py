@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import typing
 
 import cv2
 
 import numpy as np
 
+from pgsrip.ass import ASSCreator, ASSItem
 from pysrt import SubRipFile, SubRipItem
 
 import pytesseract as tess
@@ -235,3 +237,145 @@ class PgsToSrtRipper:
         subs.clean_indexes()
 
         return subs
+
+
+class PgsToAssRipper:
+
+    def __init__(self, pgs: Pgs, options: Options):
+        self.pgs = pgs
+        self.confidence = min(max(options.confidence or 65, 0), 100)
+        self.max_tess_width = min(max(options.tesseract_width or 31 * 1024, 10 * 1024), 31 * 1024)
+        self.omp_thread_limit = options.max_workers
+        self.oem = options.tesseract_oem or TesseractEngineMode.NEURAL
+        self.psm = options.tesseract_psm or TesseractPageSegmentationMode.SINGLE_UNIFORM_BLOCK_OF_TEXT
+        max_height = max([item.height for item in self.pgs.items]) // 2
+        self.gap = (max_height // 2 + 30, max_height // 2 + 100)
+        self.keep_temp_files = options.keep_temp_files
+
+    def process(self,
+                subs: ASSCreator,
+                items: typing.List[PgsSubtitleItem],
+                post_process,
+                confidence: int,
+                max_width: int,
+                oem: TesseractEngineMode,
+                psm: TesseractPageSegmentationMode):
+        full_image = FullImage.from_items(items, self.gap, max_width)
+
+        config = {
+            'output_type': tess.Output.DICT,
+            'config': f'--psm {psm.value} --oem {oem.value}'
+        }
+
+        if self.pgs.language:
+            config.update({'lang': self.pgs.language.alpha3})
+
+        if self.omp_thread_limit:
+            os.environ['OMP_THREAD_LIMIT'] = str(self.omp_thread_limit)
+        if self.keep_temp_files:
+            png_file = os.path.join(self.pgs.temp_folder,
+                                    f'{os.path.basename(subs.title)}-{len(items)}'
+                                    f'-psm{psm.value}-{oem.name}-{confidence}.png')
+            logger.debug('Writing temporary png file %s', png_file)
+            cv2.imwrite(png_file, full_image.data)
+
+        data = TsvData(tess.image_to_data(full_image.data, **config), confidence=confidence)
+
+        if self.keep_temp_files:
+            results_file = os.path.join(self.pgs.temp_folder,
+                                        f'{os.path.basename(subs.title)}-{len(items)}-{confidence}.json')
+            logger.debug('Writing temporary results file %s', results_file)
+            with open(results_file, mode='w', encoding='utf8') as f:
+                json.dump([i.__dict__ for i in data.items], f, indent=2, ensure_ascii=False)
+
+        remaining: typing.List[PgsSubtitleItem] = []
+        for item in items:
+            screen_text = ScreenText(data, item, confidence)
+            if screen_text.text is None:
+                remaining.append(item)
+                continue
+
+            text = screen_text.text
+            if post_process:
+                text = post_process(text)
+            if text:
+                ass_item = ASSItem(text, item.start, item.end, item.x_offset, item.y_offset)
+                subs.add_item(ass_item)
+
+        return remaining
+
+    def rip(self, post_process: typing.Callable[[str], str]):
+        width, height = self.pgs.get_video_resulution()
+        subs = ASSCreator(title=str(self.pgs.media_path.translate(extension='ass')),
+                          resolution_x=width, resolution_y=height)
+        oem, psm, confidence, max_width = self.oem, self.psm, self.confidence, self.max_tess_width
+        items = self.pgs.items
+        previous_size = len(items)
+        while previous_size > 0:
+            items = self.process(subs, items, post_process, confidence, max_width, oem, psm)
+            if not items:
+                break
+
+            current_size = len(items)
+            if current_size < 20:
+                max_width = min(sum([item.width + self.gap[1] for item in items]), self.max_tess_width)
+                confidence = 0
+                remaining_items = self.process(subs, items, post_process, confidence, max_width, oem, psm)
+                if remaining_items:
+                    logger.warning('Subtitles were not ripped: %r', remaining_items)
+                break
+            elif current_size > previous_size * 0.8:
+                max_width = min(sum([item.width + self.gap[1] for item in items]), self.max_tess_width) // 2
+                confidence = max(0, confidence - 5)
+            previous_size = current_size
+
+        return subs
+
+
+class ScreenText:
+    def __init__(self, data: TsvData, subtitle_item: PgsSubtitleItem, confidence: int) -> None:
+        self.text = ""
+        self.top: int
+        self.left: int
+        self.tsv_data: TsvData = data
+        self.subtitle_item: PgsSubtitleItem = subtitle_item
+        self.confidence = confidence
+
+        self._accept()
+
+    def _accept(self):
+        rows = self.tsv_data.select(self.subtitle_item.place) if self.subtitle_item.place else []
+        lines = []
+        words = []
+        last_row = None
+        for row in rows:
+            current_word = row.text
+            # Fix standalone pipes or slashes
+            if current_word in ["|", "/"]:
+                current_word = "I"
+            # Swap leading slash with 'I' if followed by lowercase letters (e.g., /f -> If)
+            else:
+                current_word = re.sub(r'^/([a-z]+)', r'I\1', current_word)
+
+            if row.conf < self.confidence:
+                if not self.tsv_data.has_word(current_word):
+                    continue
+
+            if last_row is not None and (last_row.page_num < row.page_num
+                                         or last_row.block_num < row.block_num
+                                         or last_row.par_num < row.par_num
+                                         or last_row.line_num < row.line_num) \
+                    and len(words) > 0:
+                lines.append(' '.join(words))
+                words.clear()
+            words.append(current_word)
+            last_row = row
+
+        if len(words) > 0:
+            lines.append(' '.join(words))
+            words.clear()
+
+        self.top = self.subtitle_item.x_offset
+        self.left = self.subtitle_item.y_offset
+
+        self.text = '\n'.join(lines).strip()

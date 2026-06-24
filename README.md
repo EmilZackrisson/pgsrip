@@ -92,6 +92,16 @@ Using docker:
     Ripping subtitles  [####################################]  100%  /medias/mymedia.mkv [4:en]
     11 PGS subtitles ripped from 9 files
 
+### Output formats
+
+This program supports output to two different formats, .srt and .ass. srt is very simple, it can not do positioning. When converting to ass, the positioning from pgs is preserved.
+
+The default is srt.
+
+To use ass:
+
+    $ pgsrip -o ass mymedia.mkv
+
 ### API
 
 ``` python

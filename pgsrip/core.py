@@ -4,8 +4,8 @@ import typing
 
 from pgsrip.media import Media, Pgs
 from pgsrip.mkv import Mkv
-from pgsrip.options import Options
-from pgsrip.ripper import PgsToSrtRipper
+from pgsrip.options import Options, SubtitleOutputFormat
+from pgsrip.ripper import PgsToAssRipper, PgsToSrtRipper
 from pgsrip.sup import Sup
 
 
@@ -65,10 +65,19 @@ def rip_pgs(pgs: Pgs, options: Options):
             if not p.matches(options):
                 return False
 
-            rules = options.config.select_rules(tags=options.tags, languages={p.language})
-            srt = PgsToSrtRipper(p, options).rip(lambda t: rules.apply(t, '')[0])
-            srt.save(encoding=options.encoding)
-            return True
+            match (options.output_format):
+                case (SubtitleOutputFormat.SRT):
+                    rules = options.config.select_rules(tags=options.tags, languages={p.language})
+                    srt = PgsToSrtRipper(p, options).rip(lambda t: rules.apply(t, '')[0])
+                    srt.save(encoding=options.encoding)
+                    return True
+                case (SubtitleOutputFormat.ASS):
+                    rules = options.config.select_rules(tags=options.tags, languages={p.language})
+                    ass = PgsToAssRipper(p, options).rip(lambda t: rules.apply(t, '')[0])
+                    ass.save(str(pgs.media_path.translate(extension='ass')))
+                    return True
+                case (_):
+                    logger.error("Invalid output format.")
     except Exception as e:
         logger.warning('Error while trying to rip %s: <%s> [%s]',
                        pgs.media_path, type(e).__name__, e,
