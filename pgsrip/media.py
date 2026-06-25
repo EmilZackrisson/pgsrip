@@ -31,9 +31,23 @@ class PgsSubtitleItem:
         self.media_path = media_path
         self.start = min([ds.pcs.presentation_timestamp for ds in display_sets] or [None])
         self.end = max([ds.pcs.presentation_timestamp for ds in display_sets] or [None])
+
         self.image = PgsSubtitleItem.generate_image(display_sets)
-        self.x_offset = min([ds.wds.x_offset for ds in display_sets if ds.wds.num_windows > 0] or [None])
-        self.y_offset = min([ds.wds.y_offset for ds in display_sets if ds.wds.num_windows > 0] or [None])
+        
+        x_offsets = []
+        y_offsets = []
+        for ds in display_sets:
+            if ds.pcs and ds.pcs.objects:
+                for obj in ds.pcs.objects:
+                    x_offsets.append(obj['x_offset'])
+                    y_offsets.append(obj['y_offset'])
+            elif ds.wds and ds.wds.num_windows > 0:
+                x_offsets.append(ds.wds.x_offset)
+                y_offsets.append(ds.wds.y_offset)
+
+        self.x_offset = min(x_offsets) if x_offsets else None
+        self.y_offset = min(y_offsets) if y_offsets else None
+
         self.text: typing.Optional[str] = None
         self.place: typing.Optional[typing.Tuple[int, int, int, int]] = None
 
@@ -100,10 +114,10 @@ class PgsSubtitleItem:
         return y_offset, x_offset, y_offset + height, x_offset + width
 
     def auto_fix(self, next_item: typing.Optional[PgsSubtitleItem]):
+        if self.image is None or not self.image.rle_data:
+            return False
+
         valid = True
-        if self.image is None:
-            logger.warning('Corrupted %r: No Image', self)
-            valid = False
         if self.y_offset is None:
             logger.warning('Corrupted %r: No y_offset', self)
             valid = False

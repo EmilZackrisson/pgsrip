@@ -259,6 +259,31 @@ class PresentationCompositionSegment(BaseSegment):
             'num_objects': 'number_composition_objects'
         }
 
+    @property
+    def objects(self):
+        objs = []
+        if self.number_composition_objects > 0:
+            offset = 11
+            for _ in range(self.number_composition_objects):
+                if offset + 8 > len(self.data):
+                    break
+                obj_id = from_hex(self.data[offset:offset+2])
+                win_id = self.data[offset+2]
+                cropped = bool(self.data[offset+3])
+                x = from_hex(self.data[offset+4:offset+6])
+                y = from_hex(self.data[offset+6:offset+8])
+                objs.append({
+                    'id': obj_id,
+                    'window_id': win_id,
+                    'cropped': cropped,
+                    'x_offset': x,
+                    'y_offset': y
+                })
+                offset += 8
+                if cropped:
+                    offset += 8
+        return objs
+
     def is_start(self):
         return self.composition_state in (CompositionState.EPOCH_START, CompositionState.ACQUISITION_POINT)
 
@@ -267,27 +292,27 @@ class WindowDefinitionSegment(BaseSegment):
 
     @property
     def num_windows(self):
-        return self.data[0]
+        return safe_get(self.data, 0, 0)
 
     @property
     def window_id(self):
-        return safe_get(self.data, 1, None)
+        return safe_get(self.data, 1, None) if self.num_windows > 0 else None
 
     @property
     def x_offset(self):
-        return from_hex(self.data[2:4])
+        return from_hex(self.data[2:4]) if self.num_windows > 0 and len(self.data) >= 4 else None
 
     @property
     def y_offset(self):
-        return from_hex(self.data[4:6])
+        return from_hex(self.data[4:6]) if self.num_windows > 0 and len(self.data) >= 6 else None
 
     @property
     def width(self):
-        return from_hex(self.data[6:8])
+        return from_hex(self.data[6:8]) if self.num_windows > 0 and len(self.data) >= 8 else None
 
     @property
     def height(self):
-        return from_hex(self.data[8:10])
+        return from_hex(self.data[8:10]) if self.num_windows > 0 and len(self.data) >= 10 else None
 
     def attributes(self):
         return {
@@ -396,11 +421,13 @@ class DisplaySet:
 
     @property
     def pcs(self):
-        return [s for s in self.segments if isinstance(s, PresentationCompositionSegment)][0]
+        segments = [s for s in self.segments if isinstance(s, PresentationCompositionSegment)]
+        return segments[0] if segments else None
 
     @property
     def wds(self):
-        return [s for s in self.segments if isinstance(s, WindowDefinitionSegment)][0]
+        segments = [s for s in self.segments if isinstance(s, WindowDefinitionSegment)]
+        return segments[0] if segments else None
 
     @property
     def pds_segments(self):
@@ -412,10 +439,11 @@ class DisplaySet:
 
     @property
     def end(self):
-        return [s for s in self.segments if isinstance(s, EndSegment)][0]
+        segments = [s for s in self.segments if isinstance(s, EndSegment)]
+        return segments[0] if segments else None
 
     def is_start(self):
-        return self.pcs.is_start()
+        return self.pcs.is_start() if self.pcs else False
 
     def is_valid(self):
         valid = True
@@ -426,6 +454,8 @@ class DisplaySet:
                     and s.composition_state == CompositionState.ACQUISITION_POINT):
                 logger.warning('ACQUISITION_POINT found %s, %r', s, self)
 
+        # Note: Depending on your exact needs, you might want to relax the strictness
+        # on WDS being present since valid empty DisplaySets can sometimes omit it.
         for t in (SegmentType.PCS, SegmentType.WDS, SegmentType.END):
             count = counts.get(t)
             if not count:
