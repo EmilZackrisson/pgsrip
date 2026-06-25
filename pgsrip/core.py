@@ -65,14 +65,13 @@ def rip_pgs(pgs: Pgs, options: Options):
             if not p.matches(options):
                 return False
 
+            rules = options.config.select_rules(tags=options.tags, languages={p.language})
             match (options.output_format):
                 case (SubtitleOutputFormat.SRT):
-                    rules = options.config.select_rules(tags=options.tags, languages={p.language})
                     srt = PgsToSrtRipper(p, options).rip(lambda t: rules.apply(t, '')[0])
                     srt.save(encoding=options.encoding)
                     return True
                 case (SubtitleOutputFormat.ASS):
-                    rules = options.config.select_rules(tags=options.tags, languages={p.language})
                     ass = PgsToAssRipper(p, options).rip(lambda t: rules.apply(t, '')[0])
                     ass.save(str(pgs.media_path.translate(extension='ass')))
                     return True

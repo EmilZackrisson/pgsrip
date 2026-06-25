@@ -94,41 +94,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     def add_item(self, ass_item: ASSItem):
         self.add_subtitle(ass_item.text, ass_item.start_time, ass_item.end_time, ass_item.pos_x, ass_item.pos_y)
 
-    def _offset_zero_fix(self):
-        num_zero_offset = 0
-        total_dialogue_count = 0
-
-        # Calculate the bottom margin, it's recommended it's 10%
-        margin = floor(self.res_y * 0.1)
-
-        # Step 1: Count and validate
-        for event in self.events:
-            if event.startswith("Dialogue:"):
-                total_dialogue_count += 1
-                if "\\an7\\pos(0,0)" in event:
-                    num_zero_offset += 1
-                else:
-                    # Early return: If even ONE dialogue line lacks the zero offset,
-                    # this is not a globally broken file, so we abort.
-                    return
-
-        # Step 2: Apply the fix if conditions are met
-        if total_dialogue_count > 0 and num_zero_offset == total_dialogue_count:
-            for i, event in enumerate(self.events):
-                if event.startswith("Dialogue:"):
-                    cleaned_dialogue = re.sub(r'\{[^}]*pos[^}]*\}', '', event)
-
-                    parts = cleaned_dialogue.split(',', 9)
-
-                    # 3. Overwrite MarginV (Index 7)
-                    parts[7] = str(margin)
-
-                    # 4. Rejoin the parts and save it back to the list
-                    self.events[i] = ','.join(parts)
-
     def save(self, filepath):
         """Writes the generated ASS content to a file."""
-        #self._offset_zero_fix()
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(self.header)

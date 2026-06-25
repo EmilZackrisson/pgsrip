@@ -14,7 +14,7 @@ import cv2
 from babelfish import Language
 
 from pgsrip.media_path import MediaPath
-from pgsrip.options import Options
+from pgsrip.options import Options, SubtitleOutputFormat
 from pgsrip.pgs import DisplaySet, Palette, PgsImage, PgsReader
 from pgsrip.utils import pairwise
 
@@ -33,7 +33,7 @@ class PgsSubtitleItem:
         self.end = max([ds.pcs.presentation_timestamp for ds in display_sets] or [None])
 
         self.image = PgsSubtitleItem.generate_image(display_sets)
-        
+
         x_offsets = []
         y_offsets = []
         for ds in display_sets:
@@ -45,8 +45,8 @@ class PgsSubtitleItem:
                 x_offsets.append(ds.wds.x_offset)
                 y_offsets.append(ds.wds.y_offset)
 
-        self.x_offset = min(x_offsets) if x_offsets else None
-        self.y_offset = min(y_offsets) if y_offsets else None
+        self.x_offset: int | None = min(x_offsets) if x_offsets else None
+        self.y_offset: int | None = min(y_offsets) if y_offsets else None
 
         self.text: typing.Optional[str] = None
         self.place: typing.Optional[typing.Tuple[int, int, int, int]] = None
@@ -171,17 +171,26 @@ class Pgs:
         return self.media_path.translate(number=0, extension='srt')
 
     @property
+    def ass_path(self):
+        return self.media_path.translate(number=0, extension='ass')
+
+    @property
     def items(self):
         if self._items is None:
             data = self.data_reader()
             self._items = self.decode(data, self.media_path)
         return self._items
 
+    def subtitle_path(self, format: SubtitleOutputFormat) -> Path:
+        match (format):
+            case (SubtitleOutputFormat.SRT):
+                return Path(str(self.srt_path))
+            case (SubtitleOutputFormat.ASS):
+                return Path(str(self.ass_path))
+
     def matches(self, options: Options):
 
-        output_format = options.output_format.name.lower()
-
-        subtitle_path = Path(str(self.srt_path).rstrip("srt") + output_format)
+        subtitle_path = self.subtitle_path(options.output_format)
 
         if not subtitle_path.exists():
             return True
